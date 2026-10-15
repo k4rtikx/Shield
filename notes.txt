@@ -1,0 +1,138 @@
+Backend: Python + Django REST Framework
+Database: MongoDB
+Database driver: PyMongo
+Frontend: HTML, CSS, JavaScript
+Deployment: Render + MongoDB Atlas
+
+================================================================================
+ARCHITECTURE NOTES
+================================================================================
+
+Overall Flow:
+  Users / Admin → Frontend → Django REST API → Four Django Apps → MongoDB
+
+Two key additions to the original design:
+
+1. SERVICE LAYER (between API views and MongoDB)
+   - Sits between the API views and MongoDB operations
+   - Keeps transfer logic and fraud rules separate from the views
+   - All four Django apps route business logic through this shared layer
+   - Makes the codebase cleaner and easier to test
+
+2. AUTHENTICATION & ROLE-BASED PERMISSIONS (JWT)
+   - JWT Authentication integrated directly with Django REST Framework API
+   - Regular Users  → can only access their own accounts/transactions
+   - Admins         → can monitor system-wide transactions and fraud alerts
+   - Enforced at the API layer before requests reach any Django app
+
+Architecture Layers (top → bottom):
+  ┌──────────────────────────────┬    ┌─────────────────────────┐
+  │  Regular User     Admin      │    │   config root           │
+  │  (own accounts)  (sys-wide)  │    │   (settings & URLs)     │
+  └──────────┬──────────┬────────┘    └────────────┬────────────┘
+             ▼          ▼                          │ configures
+  ┌────────────────────────────────────────────┐   │
+  │              HTML · CSS · JavaScript       │   │
+  └──────────────────────┬─────────────────────┘   │
+                         ▼                         ▼
+  ┌──────────────────────────────────────────────────────────┐  ⇔  ┌──────────────────────────────┐
+  │                  Django REST Framework API               │      │  JWT Authentication &        │
+  │                                                          │      │  Role-Based Permissions      │
+  └──┬───────────┬───────────┬──────────────────────────────┘      └──────────────────────────────┘
+     ▼           ▼           ▼            ▼
+  ┌──────┐  ┌────────┐  ┌──────────┐  ┌──────────────┐
+  │accnts│  │banking │  │transactn │  │fraud_detectn │   (4 Django apps)
+  │  app │  │  app   │  │   app    │  │    app       │
+  └──┬───┘  └───┬────┘  └────┬─────┘  └──────┬───────┘
+     └──────────┴────────────┴───────────────┘
+                              ▼
+  ┌──────────────────────────────────────────────────────────┐
+  │              Service Layer (Business Logic)              │
+  │  • Transfer logic   • Fraud rules   • Account operations │
+  └──────────────────────────────┬───────────────────────┘
+                                 ▼
+                    ┌──────────────────────┐
+                    │   MongoDB              │
+                    │   (Replica Set)        │
+                    └──────────────────────┘
+
+IMPORTANT CONDITION:
+  MongoDB MUST run as a Replica Set (or supported sharded cluster)
+  to enable multi-document ACID transactions.
+
+Diagram: shield_architecture_diagram.jpg (in project artifacts)
+================================================================================
+
+
+banking-fraud-analyzer/
+│
+├── backend/
+│   ├── manage.py
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   ├── asgi.py
+│   │   └── wsgi.py
+│   │
+│   ├── accounts/
+│   │   ├── __init__.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   ├── serializers.py
+│   │   ├── services.py
+│   │   └── tests.py
+│   │
+│   ├── banking/
+│   │   ├── __init__.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   ├── serializers.py
+│   │   ├── services.py
+│   │   └── tests.py
+│   │
+│   ├── transactions/
+│   │   ├── __init__.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   ├── serializers.py
+│   │   ├── services.py
+│   │   └── tests.py
+│   │
+│   ├── fraud_detection/
+│   │   ├── __init__.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   ├── services.py
+│   │   └── tests.py
+│   │
+│   ├── requirements.txt
+│   ├── .env
+│   └── .gitignore
+│
+├── frontend/
+│   ├── index.html
+│   ├── login.html
+│   ├── register.html
+│   ├── user-dashboard.html
+│   ├── admin-dashboard.html
+│   │
+│   ├── css/
+│   │   ├── style.css
+│   │   ├── auth.css
+│   │   ├── user-dashboard.css
+│   │   └── admin-dashboard.css
+│   │
+│   ├── js/
+│   │   ├── api.js
+│   │   ├── auth.js
+│   │   ├── user-dashboard.js
+│   │   ├── transactions.js
+│   │   └── admin-dashboard.js
+│   │
+│   └── assets/
+│
+├── README.md
+└── .gitignore
+
+
