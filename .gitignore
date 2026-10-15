@@ -1,0 +1,38 @@
+.env
+# Environment & Secrets
+.env
+.env.*
+*.env
+
+# Python Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Django database & media
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+
+# Logs
+*.log
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE & Editor folders (optional but recommended)
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,7 @@
+💡 Minor improvements to consider later (not urgent):
+
+Area	Suggestion
+Profile view	Add more user fields (date_joined, etc.) or use a serializer
+Comments	Remove the inline learning comments (# ** unpacks...) before production
+Logging	Add import logging for error tracking instead of just returning errors
+Folder name	untitled au /Shield with spaces can cause path issues (you've already seen this!)

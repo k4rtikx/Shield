@@ -1,5 +1,6 @@
-from django.contrib import admin
-from django.urls import path, include
+from django.urls import path
+from .views import create_account
 
 urlpatterns = [
+    path('accounts/', create_account, name='create_account'),
 ]
