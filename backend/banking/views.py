@@ -2,15 +2,19 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-
 from .serializers import BankAccountSerializer
-from .services import create_bank_account
+from .services import create_bank_account, get_user_accounts
 
 
-@api_view(['POST'])
+@api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def create_account(request):
-    serializer = BankAccountSerializer(data=request.data)
+
+    if request.method == 'GET':  # its just retrive the account data
+        accounts = get_user_accounts(request.user.id)
+        return Response(accounts, status=status.HTTP_200_OK)
+
+    serializer = BankAccountSerializer(data=request.data) # it create the new account 
 
     if not serializer.is_valid():
         return Response(

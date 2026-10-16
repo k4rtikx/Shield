@@ -13,3 +13,15 @@ def create_bank_account(user_id, account_data):
 
     account["_id"] = str(result.inserted_id)
     return account
+
+# Logic: It return only bank accounts whose user_id matches the authenticated user. 
+def get_user_accounts(user_id):
+    accounts = db["bank_accounts"].find({"user_id": user_id})
+
+    result = []
+
+    for account in accounts:
+        account["_id"] = str(account["_id"])
+        result.append(account)
+
+    return result

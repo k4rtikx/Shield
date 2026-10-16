@@ -5,3 +5,10 @@ Profile view	Add more user fields (date_joined, etc.) or use a serializer
 Comments	Remove the inline learning comments (# ** unpacks...) before production
 Logging	Add import logging for error tracking instead of just returning errors
 Folder name	untitled au /Shield with spaces can cause path issues (you've already seen this!)
+
+
+CORS not configured — django-cors-headers is installed but not added to settings. You'll need this before the frontend can talk to the backend.
+Admin URL not mounted — admin.site.urls isn't in your root config/urls.py
+MAILERS setting — should probably be EMAIL_BACKEND (Django's standard name)
+Transactions & Fraud Detection — empty skeletons, ready for you to build
+Frontend — all HTML/JS files are still empty placeholders
