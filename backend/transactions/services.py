@@ -1,7 +1,7 @@
 from bson import ObjectId
 from decimal import Decimal
 from config.mongodb import db, client
-
+from datetime import datetime, timezone 
 
 def transfer_money(sender_account_id, receiver_account_id, amount, user_id):
     amount = Decimal(str(amount))
@@ -66,7 +66,8 @@ def transfer_money(sender_account_id, receiver_account_id, amount, user_id):
             "sender_account_id": str(sender_id),
             "receiver_account_id": str(receiver_id),
             "amount": amount_value,
-            "status": "completed"
+            "status": "completed",
+            "created_at": datetime.now(timezone.utc),
         }
 
         result = db["transactions"].insert_one(
