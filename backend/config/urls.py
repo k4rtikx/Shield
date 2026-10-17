@@ -5,4 +5,5 @@ urlpatterns = [
     path('api/accounts/', include('accounts.urls')),
     path('api/banking/', include('banking.urls')),
     path('api/transactions/', include('transactions.urls')),
+    path("api/fraud/",include("fraud_detection.urls")),
 ]
