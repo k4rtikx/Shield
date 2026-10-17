@@ -32,7 +32,7 @@ def analyze_transaction(transaction_id):
 
     if created_at:
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=timezone.utc) # tzinfo stores timezone information. = 2026-10-17 10:30 UTC
 
         window_start = created_at - timedelta(
             minutes=TIME_WINDOW_MINUTES
@@ -41,8 +41,8 @@ def analyze_transaction(transaction_id):
         repeated_count = db["transactions"].count_documents({
             "sender_account_id": transaction["sender_account_id"],
             "created_at": {
-                "$gte": window_start,
-                "$lte": created_at
+                "$gte": window_start, # $gte means greater than or equal to 10:20 AM.
+                "$lte": created_at # $lte means less than or equal to 10:30 AM.
             },
             "status": "completed"
         })
