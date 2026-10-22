@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from fraud_detection.audit import build_fraud_event, record_fraud_event
 from fraud_detection.pre_transfer import assess_transfer_risk
 from bson import ObjectId
 from bson.decimal128 import Decimal128
@@ -49,6 +50,7 @@ def transfer_money(
         raise ValueError("Cannot transfer to the same account")
 
     amount_bson = Decimal128(amount)
+    audit_event = None
 
     def find_existing(session=None):
         return db["transactions"].find_one(
@@ -74,6 +76,8 @@ def transfer_money(
         return serialize_transaction(transaction)
 
     def execute_transfer(session):
+        nonlocal audit_event
+
         existing = find_existing(session)
 
         if existing:
@@ -96,6 +100,7 @@ def transfer_money(
             raise ValueError("Receiver account not found")
 
         now = datetime.now(timezone.utc)
+
         risk = assess_transfer_risk(
             sender_id=sender_id,
             receiver_id=receiver_id,
@@ -104,8 +109,28 @@ def transfer_money(
             session=session,
         )
 
-        if risk["risk_level"] == "high":
+        decision = risk["decision"]
+
+        audit_event = build_fraud_event(
+            initiated_by_user_id=user_id,
+            idempotency_key=idempotency_key,
+            sender_account_id=sender_id,
+            receiver_account_id=receiver_id,
+            amount=amount,
+            risk=risk,
+            outcome="transfer_failed",
+        )
+
+        if decision == "decline":
+            audit_event["outcome"] = "declined"
             raise ValueError("Transfer declined by fraud risk assessment")
+
+        if decision == "review":
+            audit_event["outcome"] = "review_required"
+            raise ValueError("Transfer requires manual review")
+
+        if decision != "allow":
+            raise ValueError("Invalid fraud policy decision")
 
         debit = db["bank_accounts"].update_one(
             {
@@ -145,6 +170,12 @@ def transfer_money(
         )
 
         transaction["_id"] = result.inserted_id
+
+        audit_event["outcome"] = "completed"
+        audit_event["transaction_id"] = str(result.inserted_id)
+
+        record_fraud_event(audit_event, session=session)
+
         return serialize_transaction(transaction)
 
     try:
@@ -156,6 +187,21 @@ def transfer_money(
 
         if existing:
             return validate_existing(existing)
+
+        raise
+
+    except Exception:
+        if audit_event is not None:
+            if audit_event["outcome"] == "completed":
+                audit_event["outcome"] = "transfer_failed"
+                audit_event["transaction_id"] = None
+
+            try:
+                # Persist outside the aborted transfer transaction.
+                record_fraud_event(audit_event)
+            except Exception:
+                # Preserve the original transfer exception.
+                pass
 
         raise
 

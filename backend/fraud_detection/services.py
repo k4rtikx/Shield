@@ -1,7 +1,10 @@
+
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-
+from bson import ObjectId
+from bson.decimal128 import Decimal128
 from config.mongodb import db
+from fraud_detection.policy import evaluate_policy
 
 
 LARGE_TRANSFER_THRESHOLD = Decimal("10000.00")
@@ -10,6 +13,15 @@ TIME_WINDOW_MINUTES = 10
 
 
 def analyze_transaction(transaction_id):
+    try:
+        transaction_id = (
+            transaction_id
+            if isinstance(transaction_id, ObjectId)
+            else ObjectId(str(transaction_id))
+        )
+    except Exception:
+        raise ValueError("Invalid transaction ID")
+
     transaction = db["transactions"].find_one({
         "_id": transaction_id
     })
@@ -20,7 +32,11 @@ def analyze_transaction(transaction_id):
     risk_score = 0
     risk_factors = []
 
-    amount = Decimal(str(transaction["amount"]))
+    amount_value = transaction["amount"]
+    if isinstance(amount_value, Decimal128):
+        amount = amount_value.to_decimal()
+    else:
+        amount = Decimal(str(amount_value))
 
     # Rule 1: Large transfer
     if amount >= LARGE_TRANSFER_THRESHOLD:
@@ -32,7 +48,7 @@ def analyze_transaction(transaction_id):
 
     if created_at:
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc) # tzinfo stores timezone information. = 2026-10-17 10:30 UTC
+            created_at = created_at.replace(tzinfo=timezone.utc)
 
         window_start = created_at - timedelta(
             minutes=TIME_WINDOW_MINUTES
@@ -40,14 +56,15 @@ def analyze_transaction(transaction_id):
 
         repeated_count = db["transactions"].count_documents({
             "sender_account_id": transaction["sender_account_id"],
+            "_id": {"$ne": transaction["_id"]},
             "created_at": {
-                "$gte": window_start, # $gte means greater than or equal to 10:20 AM.
-                "$lte": created_at # $lte means less than or equal to 10:30 AM.
+                "$gte": window_start,
+                "$lte": created_at,
             },
-            "status": "completed"
+            "status": "completed",
         })
 
-        if repeated_count >= REPEATED_TRANSFER_LIMIT:
+        if repeated_count + 1 >= REPEATED_TRANSFER_LIMIT:
             risk_score += 30
             risk_factors.append(
                 "Repeated transfers within 10 minutes"
@@ -55,24 +72,33 @@ def analyze_transaction(transaction_id):
 
     risk_score = min(risk_score, 100)
 
-    if risk_score >= 70:
-        risk_level = "high"
-    elif risk_score >= 40:
-        risk_level = "medium"
-    else:
-        risk_level = "low"
+    risk_level = (
+        "high" if risk_score >= 70
+        else "medium" if risk_score >= 30
+        else "low"
+    )
+
+    risk_assessment = {
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+        "signals": risk_factors,
+    }
+
+    policy_result = evaluate_policy(risk_assessment)
 
     result = {
         "transaction_id": str(transaction["_id"]),
         "risk_score": risk_score,
         "risk_level": risk_level,
         "risk_factors": risk_factors,
-        "analyzed_at": datetime.now(timezone.utc)
+        "decision": policy_result["decision"],
+        "policy_version": policy_result["policy_version"],
+        "analyzed_at": datetime.now(timezone.utc),
     }
 
     db["fraud_alerts"].insert_one(result)
 
-    result["_id"] = str(result["_id"]) if "_id" in result else None
+    result["_id"] = str(result["_id"])
     result["analyzed_at"] = result["analyzed_at"].isoformat()
 
     return result
