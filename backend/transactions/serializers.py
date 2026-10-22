@@ -8,3 +8,8 @@ class MoneyTransferSerializer(serializers.Serializer):
         decimal_places=2,
         min_value=0.01
     )
+    idempotency_key = serializers.CharField(
+        required=False,
+        max_length=128,
+        write_only=True
+    )

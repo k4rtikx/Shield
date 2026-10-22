@@ -1,3 +1,4 @@
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -6,9 +7,18 @@ from rest_framework import status
 from .serializers import MoneyTransferSerializer
 from .services import transfer_money, get_user_transactions
 
-@api_view(['POST'])
+
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def transfer(request):
+    idempotency_key = request.headers.get("Idempotency-Key")
+
+    if not idempotency_key or not idempotency_key.strip():
+        return Response(
+            {"error": "Idempotency-Key header is required"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     serializer = MoneyTransferSerializer(data=request.data)
 
     if not serializer.is_valid():
@@ -22,7 +32,8 @@ def transfer(request):
             sender_account_id=serializer.validated_data["sender_account_id"],
             receiver_account_id=serializer.validated_data["receiver_account_id"],
             amount=serializer.validated_data["amount"],
-            user_id=request.user.id
+            user_id=request.user.id,
+            idempotency_key=idempotency_key.strip()
         )
 
         return Response(
@@ -38,7 +49,7 @@ def transfer(request):
 
     except Exception:
         return Response(
-            {"error": "Transfer failed. No changes were committed."},
+            {"error": "Transfer failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
