@@ -1,8 +1,6 @@
-
 from datetime import timedelta
 from decimal import Decimal
 
-from bson import ObjectId
 from bson.decimal128 import Decimal128
 
 from config.mongodb import db
@@ -11,6 +9,12 @@ from config.mongodb import db
 VELOCITY_WINDOW = timedelta(minutes=10)
 RAPID_MOVEMENT_WINDOW = timedelta(minutes=30)
 DAILY_WINDOW = timedelta(days=1)
+
+SENDER_VELOCITY_LIMIT = 5
+RECEIVER_VELOCITY_LIMIT = 10
+DAILY_DEBIT_LIMIT = Decimal("50000.00")
+DAILY_CREDIT_LIMIT = Decimal("100000.00")
+COUNTERPARTY_LIMIT = 8
 
 
 def _decimal(value):
@@ -51,7 +55,7 @@ def assess_transfer_risk(
     completed = {"status": "completed"}
 
     # 1. Recent transfer velocity
-    recent_start = now - VELOCITY_WINDOW # past 10 minutes transations
+    recent_start = now - VELOCITY_WINDOW
 
     sender_recent = find_transactions({
         **completed,
@@ -65,11 +69,11 @@ def assess_transfer_risk(
         "created_at": {"$gte": recent_start, "$lt": now},
     })
 
-    if len(sender_recent) >= 5: # len of sender tranasctions
+    if len(sender_recent) + 1 >= SENDER_VELOCITY_LIMIT:
         score += 25
         signals.append("HIGH_SENDER_TRANSFER_VELOCITY")
 
-    if len(receiver_recent) >= 10:
+    if len(receiver_recent) + 1 >= RECEIVER_VELOCITY_LIMIT:
         score += 25
         signals.append("HIGH_RECEIVER_TRANSFER_VELOCITY")
 
@@ -89,7 +93,7 @@ def assess_transfer_risk(
     })
 
     daily_debit = sum(
-        (_decimal(tx["amount"]) for tx in sender_daily), # Sum of sender's daily debits
+        (_decimal(tx["amount"]) for tx in sender_daily),
         Decimal("0"),
     )
 
@@ -98,26 +102,28 @@ def assess_transfer_risk(
         Decimal("0"),
     )
 
-    if daily_debit + amount > Decimal("50000"):
+    projected_debit = daily_debit + amount
+    projected_credit = daily_credit + amount
+
+    if projected_debit > DAILY_DEBIT_LIMIT:
         score += 20
         signals.append("HIGH_DAILY_DEBIT_TOTAL")
 
-    if daily_credit + amount > Decimal("100000"):
+    if projected_credit > DAILY_CREDIT_LIMIT:
         score += 20
         signals.append("HIGH_DAILY_CREDIT_TOTAL")
 
-    # 3. Counterparty diversity   /  sender has sent to 7 different people and now sending to 8th person
+    # 3. Counterparty diversity
     sender_counterparties = {
         tx["receiver_account_id"]
         for tx in sender_daily
         if tx.get("receiver_account_id")
     }
 
-    if len(sender_counterparties | {receiver_id}) >= 8: #{"A", "B", "C", "D", "E", "F", "G"} | {"C"} this add c to set
+    if len(sender_counterparties | {receiver_id}) >= COUNTERPARTY_LIMIT:
         score += 20
         signals.append("MANY_RECENT_COUNTERPARTIES")
 
-    # 4. Possible rapid movement of received funds  # receiver transfer funds to different account within 30 minutes
     # 4. Possible rapid movement of received funds
     cutoff = now - RAPID_MOVEMENT_WINDOW
 
@@ -133,29 +139,19 @@ def assess_transfer_risk(
         "created_at": {"$gte": cutoff, "$lt": now},
     })
 
-    rapid_movement = False
-
-    for incoming in recent_incoming:
-        incoming_time = incoming["created_at"]
-
-        for outgoing in recent_outgoing:
-            outgoing_time = outgoing["created_at"]
-
-            # Outgoing transfer must occur after incoming transfer,
-            # within the configured 30-minute window.
-            if (
-                incoming_time < outgoing_time <= now  # 10 am < 10:15 am <= 10:30 am
-                and outgoing_time - incoming_time <= RAPID_MOVEMENT_WINDOW  #within 30 minutes
-            ):
-                rapid_movement = True
-                break
-
-        if rapid_movement:
-            break
+    rapid_movement = any(
+        incoming["created_at"] < outgoing["created_at"] <= now
+        and outgoing["created_at"] - incoming["created_at"]
+        <= RAPID_MOVEMENT_WINDOW
+        for incoming in recent_incoming
+        for outgoing in recent_outgoing
+    )
 
     if rapid_movement:
         score += 25
         signals.append("POSSIBLE_RAPID_FUND_MOVEMENT")
+
+    score = min(score, 100)
 
     level = (
         "high" if score >= 70
@@ -168,5 +164,7 @@ def assess_transfer_risk(
         "risk_level": level,
         "signals": signals,
         "daily_debit": str(daily_debit),
+        "projected_daily_debit": str(projected_debit),
         "daily_credit": str(daily_credit),
+        "projected_daily_credit": str(projected_credit),
     }
